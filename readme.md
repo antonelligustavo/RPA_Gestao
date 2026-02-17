@@ -86,11 +86,12 @@ playwright install chromium
 Certifique-se de que a estrutura de pastas esteja organizada:
 
 ```
-RPA_Gestao_V1/
+RPA_Gestao/
 ├── main.py                 # Arquivo principal
 ├── automatizador.py        # Lógica de automação
 ├── config.py              # Configurações
 ├── form_processor.py      # Processamento de formulários
+├── validacao_emails.py    # Sanitização de campos 
 ├── navigation.py          # Navegação web
 ├── utils.py               # Utilitários
 ├── requirements.txt       # Dependências
