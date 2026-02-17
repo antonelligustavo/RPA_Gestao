@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import asyncio
 import logging
 import os
@@ -9,30 +10,36 @@ load_dotenv(dotenv_path=ENV_PATH)
 logger = logging.getLogger(__name__)
 
 async def fazer_login(page):
+    """Realiza login no sistema"""
     try:
         logger.info("Iniciando processo de login...")
         
         await page.goto(CONFIG["url"])
-        await page.wait_for_load_state("load")
+        await page.wait_for_load_state("networkidle")
         
         frame = await encontrar_frame(page, CONFIG["selectors"]["login_frame_pattern"])
         
         if not await aguardar_elemento(frame, CONFIG["selectors"]["username_field"]):
             raise Exception("Campo de usuário não encontrado")
         
-        username = os.getenv('APP_USERNAME', 'rpa.gestaoac')
+        # Obter credenciais - SEM FALLBACK
+        username = os.getenv('APP_USERNAME')
         password = os.getenv('APP_PASSWORD')
         
-        if not password:
-            raise Exception("Senha não encontrada nas variáveis de ambiente. Configure APP_PASSWORD no arquivo .env")
+        if not username or not password:
+            raise Exception(
+                "Credenciais não encontradas. Configure APP_USERNAME e APP_PASSWORD "
+                "no arquivo env_file.env na pasta Arquivos"
+            )
         
         await frame.fill(CONFIG["selectors"]["username_field"], username)
         await frame.fill(CONFIG["selectors"]["password_field"], password)
         await frame.click(CONFIG["selectors"]["login_button"])
         
-        await page.wait_for_timeout(CONFIG["timeouts"]["page_load"])
+        # Aguardar carregamento usando wait_for_load_state ao invés de sleep
+        await page.wait_for_load_state("networkidle")
         
-        logger.info("Login realizado com sucesso")
+        logger.info("✅ Login realizado com sucesso")
         return frame
         
     except Exception as e:
@@ -40,10 +47,10 @@ async def fazer_login(page):
         raise
 
 async def voltar_para_gestao_acesso(page, frame):
+    """Volta para o menu principal de gestão de acesso"""
     try:
         logger.debug("Voltando para o menu principal...")
         
-        await page.wait_for_timeout(CONFIG["timeouts"]["frame_stability"])
         await page.wait_for_load_state("domcontentloaded")
         
         tentativas_maximas = 3
@@ -58,7 +65,7 @@ async def voltar_para_gestao_acesso(page, frame):
         for tentativa in range(tentativas_maximas):
             logger.debug(f"Tentativa {tentativa + 1} de voltar ao menu")
             
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             
             frames = page.frames
             link_clicado = False
@@ -75,7 +82,7 @@ async def voltar_para_gestao_acesso(page, frame):
                         count = await links.count()
                         
                         if count > 0:
-                            logger.debug(f"Encontrados {count} links com seletor '{seletor}' no frame: {current_frame.url}")
+                            logger.debug(f"Encontrados {count} links com seletor '{seletor}'")
                             
                             for i in range(count):
                                 link = links.nth(i)
@@ -85,33 +92,33 @@ async def voltar_para_gestao_acesso(page, frame):
                                     if await link.is_visible() and await link.is_enabled():
                                         try:
                                             await link.click(timeout=5000)
-                                            logger.debug(f"Clique realizado com sucesso usando seletor '{seletor}' no link {i+1}")
+                                            logger.debug(f"✅ Clique realizado com sucesso no link para voltar ao menu")
                                         except:
                                             await link.evaluate("element => element.click()")
-                                            logger.debug(f"Clique via JavaScript realizado no link {i+1}")
+                                            logger.debug(f"✅ Clique via JavaScript realizado")
                                         
                                         link_clicado = True
                                         break
                                         
                                 except Exception as click_error:
-                                    logger.debug(f"Erro ao clicar no link {i+1} com seletor '{seletor}': {click_error}")
+                                    logger.debug(f"Link {i+1} não disponível: {click_error}")
                                     continue
                         
                         if link_clicado:
                             break
                             
                     except Exception as frame_error:
-                        logger.debug(f"Erro ao processar frame {current_frame.url} com seletor '{seletor}': {frame_error}")
+                        logger.debug(f"Frame não disponível para seletor '{seletor}': {frame_error}")
                         continue
             
             if link_clicado:
                 break
             else:
-                logger.debug(f"Tentativa {tentativa + 1} falhou, aguardando antes da próxima...")
-                await asyncio.sleep(CONFIG["timeouts"]["retry_delay"] / 1000)
+                logger.debug(f"Tentativa {tentativa + 1} falhou, aguardando...")
+                await asyncio.sleep(1.5)
         
         if not link_clicado:
-            logger.warning("Tentando navegação direta pela URL como último recurso...")
+            logger.debug("Tentando navegação direta pela URL...")
             try:
                 current_url = page.url
                 base_url = current_url.split('/')[0] + '//' + current_url.split('/')[2]
@@ -119,39 +126,37 @@ async def voltar_para_gestao_acesso(page, frame):
                 
                 await page.goto(menu_url)
                 await page.wait_for_load_state("domcontentloaded")
-                logger.debug("Navegação direta para menu.do realizada com sucesso")
+                logger.debug("✅ Navegação direta realizada")
                 link_clicado = True
                 
             except Exception as url_error:
-                logger.warning(f"Erro na navegação direta: {url_error}")
+                logger.debug(f"Navegação direta falhou: {url_error}")
         
         if link_clicado:
-            await page.wait_for_timeout(CONFIG["timeouts"]["page_load"])
-            await page.wait_for_load_state("domcontentloaded")
+            await page.wait_for_load_state("networkidle")
             
             try:
-                menu_frame = await encontrar_frame(page, CONFIG["selectors"]["login_frame_pattern"], max_tentativas=5)
+                # Tentar encontrar frame do menu sem warnings excessivos
+                menu_frame = await encontrar_frame(page, CONFIG["selectors"]["login_frame_pattern"])
                 if menu_frame:
                     await menu_frame.wait_for_selector(CONFIG["selectors"]["access_link"], timeout=5000)
-                    logger.debug("Confirmado: voltou ao menu principal com sucesso")
-                else:
-                    logger.warning("Não foi possível confirmar se voltou ao menu principal")
-            except:
-                logger.warning("Não foi possível verificar se voltou ao menu, mas continuando...")
-            
+                    logger.debug("✅ Retorno ao menu confirmado")
+            except Exception as verify_error:
+                # Não é crítico se não conseguir verificar
+                logger.debug(f"Verificação do menu: {verify_error}")
         else:
-            logger.warning("Não foi possível encontrar/clicar em nenhum link para voltar ao menu")
-            logger.warning("Tentando continuar o processamento...")
+            logger.debug("Não foi possível voltar ao menu de forma explícita, continuando...")
             
             if not await verificar_sessao_ativa(page):
                 raise Exception("Sessão possivelmente expirou")
         
     except Exception as e:
-        logger.error(f"Erro ao voltar para o menu: {e}")
-        logger.warning("Continuando processamento mesmo com erro no retorno ao menu")
+        logger.debug(f"Erro ao voltar para o menu: {e}")
+        # Não é crítico, continuar processamento
         pass
 
 async def navegar_para_incluir_acesso(page, frame):
+    """Navega para a página de incluir acesso"""
     max_tentativas = 3
     
     for tentativa in range(max_tentativas):
@@ -161,36 +166,33 @@ async def navegar_para_incluir_acesso(page, frame):
             try:
                 await frame.wait_for_load_state("domcontentloaded", timeout=5000)
             except:
-                logger.warning("Frame pode estar instável, procurando novo frame...")
+                logger.debug("Frame pode estar instável, procurando novo frame...")
                 frame = await encontrar_frame(page, CONFIG["selectors"]["login_frame_pattern"])
             
             if not await aguardar_elemento(frame, CONFIG["selectors"]["access_link"], timeout=10000):
                 raise Exception(f"Link de acesso não encontrado na tentativa {tentativa + 1}")
             
             await frame.click(CONFIG["selectors"]["access_link"], timeout=10000)
-            await page.wait_for_timeout(CONFIG["timeouts"]["page_load"])
-            await page.wait_for_load_state("domcontentloaded")
+            await page.wait_for_load_state("networkidle")
             
             target_frame = await encontrar_frame(page, "usuarios_incluiAcesso.do")
             
             await target_frame.select_option(CONFIG["selectors"]["frequency_select"], CONFIG["values"]["frequency_id"])
             await target_frame.click(CONFIG["selectors"]["submit_button"])
             
-            await asyncio.sleep(2)
+            await page.wait_for_load_state("networkidle")
             
-            logger.debug("Navegação para incluir acesso concluída")
+            logger.debug("✅ Navegação para incluir acesso concluída")
             return target_frame
             
         except Exception as e:
-            logger.warning(f"Erro na tentativa {tentativa + 1} de navegar para incluir acesso: {e}")
-            
             if tentativa < max_tentativas - 1:
-                logger.info(f"Tentando recuperar a sessão... (tentativa {tentativa + 1}/{max_tentativas})")
+                logger.debug(f"Tentativa {tentativa + 1} falhou: {e}")
+                logger.debug(f"Tentando recuperar sessão...")
                 
                 try:
                     await voltar_para_gestao_acesso(page, frame)
-                    
-                    await asyncio.sleep(CONFIG["timeouts"]["retry_delay"] / 1000)
+                    await asyncio.sleep(2)
                     
                     if not await verificar_sessao_ativa(page):
                         logger.warning("Sessão pode ter expirado, tentando relogar...")
@@ -199,11 +201,11 @@ async def navegar_para_incluir_acesso(page, frame):
                         frame = await encontrar_frame(page, CONFIG["selectors"]["login_frame_pattern"])
                     
                 except Exception as recovery_error:
-                    logger.warning(f"Erro na tentativa de recuperação: {recovery_error}")
+                    logger.debug(f"Erro na recuperação: {recovery_error}")
                     if tentativa == max_tentativas - 1:
-                        raise Exception(f"Falha crítica após {max_tentativas} tentativas. Último erro: {e}. Erro de recuperação: {recovery_error}")
+                        raise Exception(f"Falha após {max_tentativas} tentativas: {e}")
             else:
-                logger.error(f"Erro na navegação para incluir acesso após {max_tentativas} tentativas: {e}")
-                raise Exception(f"Falha crítica na navegação para incluir acesso após {max_tentativas} tentativas: {e}")
+                logger.error(f"Erro na navegação após {max_tentativas} tentativas: {e}")
+                raise Exception(f"Falha crítica na navegação: {e}")
     
-    raise Exception(f"Não foi possível navegar para incluir acesso após {max_tentativas} tentativas")
+    raise Exception(f"Não foi possível navegar após {max_tentativas} tentativas")

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import os
 import sys
 from datetime import datetime
@@ -53,7 +54,10 @@ CONFIG = {
         "cargo_select": 'select[name="cargo"]',
         "setor_select": 'select[name="setor"]',
         "lupa_button": 'img[src="imagens/icones/lupa.gif"]',
-        "empresa_input": 'input[name="empresa_id"]'
+        "empresa_input": 'input[name="empresa_id"]',
+        # Seletores para detectar mensagens de erro/alerta
+        "mensagem_erro": ".mensagem-erro, .alert, .error, div[class*='erro']",
+        "mensagem_alerta": ".alert-warning, .aviso, div[class*='alert']"
     },
     "values": {
         "frequency_id": "90",
@@ -68,13 +72,13 @@ CONFIG = {
     },
     "timeouts": {
         "navigation": 30000,
-        "element": 15000,  # Aumentado de 10000 para 15000
-        "element_critical": 20000,  # Novo timeout para elementos críticos
-        "page_load": 5000,  # Aumentado de 3000 para 5000
-        "frame_stability": 3000,  # Aumentado de 2000 para 3000
-        "retry_delay": 2500,  # Aumentado de 2000 para 2500
-        "polling_interval": 1000,  # Novo: intervalo para polling manual
-        "empresa_input_timeout": 25000  # Novo: timeout específico para empresa_input
+        "element": 15000,
+        "element_critical": 20000,
+        "page_load": 3000,
+        "frame_stability": 2000,
+        "retry_delay": 2000,
+        "polling_interval": 1000,
+        "empresa_input_timeout": 25000
     }
 }
 
@@ -86,6 +90,11 @@ def get_log_filename():
 def get_report_filename():
     ensure_directory_exists(LOGS_FOLDER)
     filename = f"relatorio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    return os.path.join(LOGS_FOLDER, filename)
+
+def get_report_txt_filename():
+    ensure_directory_exists(LOGS_FOLDER)
+    filename = f"relatorio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     return os.path.join(LOGS_FOLDER, filename)
 
 def verificar_arquivos_necessarios():
